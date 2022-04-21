@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from focal_frequency_loss import FocalFrequencyLoss as FFL
+from improvement.psd_loss import PSDLoss
 
 from networks import MLP
 from utils import print_and_write_log, weights_init
@@ -14,6 +15,7 @@ class VanillaAE(nn.Module):
         super(VanillaAE, self).__init__()
         self.opt = opt
         self.device = torch.device("cuda:0" if not opt.no_cuda else "cpu")
+        self.method = opt.method
         nc = int(opt.nc)
         imageSize = int(opt.imageSize)
         nz = int(opt.nz)
@@ -35,12 +37,22 @@ class VanillaAE(nn.Module):
         # losses
         self.criterion = nn.MSELoss()
         # define focal frequency loss
-        self.criterion_freq = FFL(loss_weight=opt.ffl_w,
-                                  alpha=opt.alpha,
-                                  patch_factor=opt.patch_factor,
-                                  ave_spectrum=opt.ave_spectrum,
-                                  log_matrix=opt.log_matrix,
-                                  batch_matrix=opt.batch_matrix).to(self.device)
+        if self.method == 'psd':
+            self.norm = opt.norm
+            self.weight = opt.weight
+            self.criterion_freq = PSDLoss(loss_weight=opt.ffl_w,
+                                          alpha=opt.alpha,
+                                          patch_factor=opt.patch_factor,
+                                          ave_spectrum=opt.ave_spectrum,
+                                          log_matrix=opt.log_matrix,
+                                          batch_matrix=opt.batch_matrix).to(self.device)
+        else:
+            self.criterion_freq = FFL(loss_weight=opt.ffl_w,
+                                      alpha=opt.alpha,
+                                      patch_factor=opt.patch_factor,
+                                      ave_spectrum=opt.ave_spectrum,
+                                      log_matrix=opt.log_matrix,
+                                      batch_matrix=opt.batch_matrix).to(self.device)
 
         # misc
         self.to(self.device)
@@ -63,7 +75,10 @@ class VanillaAE(nn.Module):
 
         # apply focal frequency loss
         if epoch >= self.opt.freq_start_epoch:
-            errG_freq = self.criterion_freq(recon, real, matrix)
+            if self.method == 'psd':
+                errG_freq = self.criterion_freq(recon, real, self.norm, self.weight, matrix)
+            else:
+                errG_freq = self.criterion_freq(recon, real, matrix)
         else:
             errG_freq = torch.tensor(0.0).to(self.device)
 

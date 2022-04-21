@@ -14,10 +14,10 @@ from utils import get_dataloader, print_and_write_log, set_random_seed
 
 parser = argparse.ArgumentParser()
 # basic
-parser.add_argument('--dataset', required=True, help='folderall | filelist | pairfilelist')
-parser.add_argument('--dataroot', default='', help='path to dataset')
-parser.add_argument('--datalist', default='', help='path to dataset file list')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
+parser.add_argument('--dataset', default='filelist', help='folderall | filelist | pairfilelist')
+parser.add_argument('--dataroot', default='../datasets/celeba', help='path to dataset')
+parser.add_argument('--datalist', default='../datasets/celeba_recon_lists/train.txt', help='path to dataset file list')
+parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)  # 0 for cpu
 parser.add_argument('--batchSize', type=int, default=128, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 parser.add_argument('--nz', type=int, default=256, help='dimension of the latent layers')
@@ -26,10 +26,11 @@ parser.add_argument('--nepoch', type=int, default=20, help='number of epochs to 
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate, default=0.001')
 parser.add_argument('--beta1', type=float, default=0.9, help='beta1 for adam. default=0.9')
 parser.add_argument('--beta2', type=float, default=0.999, help='beta2 for adam. default=0.999')
-parser.add_argument('--no_cuda', action='store_true', help='not enable cuda (if use CPU only)')
+# parser.add_argument('--no_cuda', action='store_true', help='not enable cuda (if use CPU only)')  # https://www.pynote.net/archives/1673
+parser.add_argument('--no_cuda', type=bool, default=True, help='not enable cuda (if use CPU only)')
 parser.add_argument('--netG', default='', help='path to netG (to continue training)')
-parser.add_argument('--expf', default='./experiments', help='folder to save visualized images and model checkpoints')
-parser.add_argument('--manualSeed', type=int, help='manual random seed')
+parser.add_argument('--expf', default='./experiments/celeba_recon_psd_l1_recon/', help='folder to save visualized images and model checkpoints')
+parser.add_argument('--manualSeed', type=int, default=0, help='manual random seed')
 
 # display and save
 parser.add_argument('--log_iter', type=int, default=50, help='log interval (iterations)')
@@ -38,13 +39,18 @@ parser.add_argument('--ckpt_save_epoch', type=int, default=1, help='checkpoint s
 
 # losses
 parser.add_argument('--mse_w', type=float, default=1.0, help='weight for mse (L2) spatial loss')
-parser.add_argument('--ffl_w', type=float, default=0.0, help='weight for focal frequency loss')
+parser.add_argument('--ffl_w', type=float, default=100.0, help='weight for focal frequency loss')  # 0 for wo_ffl; 100 for w_ffl
 parser.add_argument('--alpha', type=float, default=1.0, help='the scaling factor alpha of the spectrum weight matrix for flexibility')
 parser.add_argument('--patch_factor', type=int, default=1, help='the factor to crop image patches for patch-based focal frequency loss')
 parser.add_argument('--ave_spectrum', action='store_true', help='whether to use minibatch average spectrum')
 parser.add_argument('--log_matrix', action='store_true', help='whether to adjust the spectrum weight matrix by logarithm')
 parser.add_argument('--batch_matrix', action='store_true', help='whether to calculate the spectrum weight matrix using batch-based statistics')
 parser.add_argument('--freq_start_epoch', type=int, default=1, help='the start epoch to add focal frequency loss')
+
+# for PSDLoss
+parser.add_argument('--method', type=str, default='psd')
+parser.add_argument('--norm', type=str, default='l1')
+parser.add_argument('--weight', type=str, default='recon')
 
 opt = parser.parse_args()
 opt.is_train = True
