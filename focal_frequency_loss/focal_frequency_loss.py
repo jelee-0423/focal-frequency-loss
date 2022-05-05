@@ -51,10 +51,10 @@ class FocalFrequencyLoss(nn.Module):
 
         # perform 2D DFT (real-to-complex, orthonormalization)
         if IS_HIGH_VERSION:
-            freq = torch.fft.fft2(y, norm='ortho')
-            freq = torch.stack([freq.real, freq.imag], -1)
+            freq = torch.fft.fft2(y, norm='ortho')  # 高版本中有a+bj的复数形式
+            freq = torch.stack([freq.real, freq.imag], -1)  # ffl中并没有shift操作，但是在AI时需要先shift操作，在这里因为和weight matrix都是相对位置，所以不shift也没关系
         else:
-            freq = torch.rfft(y, 2, onesided=False, normalized=True)
+            freq = torch.rfft(y, 2, onesided=False, normalized=True)  # 低版本中返回(y.shape[0], y.shape[1], 2)，实部虚部分开
         return freq
 
     def loss_formulation(self, recon_freq, real_freq, matrix=None):
@@ -65,7 +65,7 @@ class FocalFrequencyLoss(nn.Module):
         else:
             # if the matrix is calculated online: continuous, dynamic, based on current Euclidean distance
             matrix_tmp = (recon_freq - real_freq) ** 2
-            matrix_tmp = torch.sqrt(matrix_tmp[..., 0] + matrix_tmp[..., 1]) ** self.alpha
+            matrix_tmp = torch.sqrt(matrix_tmp[..., 0] + matrix_tmp[..., 1]) ** self.alpha  # …代替了切片操作中前面所有的:， 即a[:, :, None] 和a[…, None]等价（测试了一下，和a[:, None]其实也一样） https://zhuanlan.zhihu.com/p/264896206
 
             # whether to adjust the spectrum weight matrix by logarithm
             if self.log_matrix:
@@ -75,11 +75,11 @@ class FocalFrequencyLoss(nn.Module):
             if self.batch_matrix:
                 matrix_tmp = matrix_tmp / matrix_tmp.max()
             else:
-                matrix_tmp = matrix_tmp / matrix_tmp.max(-1).values.max(-1).values[:, :, :, None, None]
+                matrix_tmp = matrix_tmp / matrix_tmp.max(-1).values.max(-1).values[:, :, :, None, None]  # normalize the matrix values into the range [0; 1]
 
             matrix_tmp[torch.isnan(matrix_tmp)] = 0.0
             matrix_tmp = torch.clamp(matrix_tmp, min=0.0, max=1.0)
-            weight_matrix = matrix_tmp.clone().detach()
+            weight_matrix = matrix_tmp.clone().detach()  # detach means doesn't compute gradients, corresponing the 'gradient is locked' in paper
 
         assert weight_matrix.min().item() >= 0 and weight_matrix.max().item() <= 1, (
             'The values of spectrum weight matrix should be in the range [0, 1], '
@@ -87,7 +87,7 @@ class FocalFrequencyLoss(nn.Module):
 
         # frequency distance using (squared) Euclidean distance
         tmp = (recon_freq - real_freq) ** 2
-        freq_distance = tmp[..., 0] + tmp[..., 1]
+        freq_distance = tmp[..., 0] + tmp[..., 1]  # 相当于开根号之后再平方
 
         # dynamic spectrum weighting (Hadamard product)
         loss = weight_matrix * freq_distance

@@ -48,9 +48,9 @@ parser.add_argument('--batch_matrix', action='store_true', help='whether to calc
 parser.add_argument('--freq_start_epoch', type=int, default=1, help='the start epoch to add focal frequency loss')
 
 # for PSDLoss
-parser.add_argument('--method', type=str, default='psd')
-parser.add_argument('--norm', type=str, default='l1')
-parser.add_argument('--weight', type=str, default='recon')
+parser.add_argument('--method', type=str, default='psd', help='psd | ffl')
+parser.add_argument('--norm', type=str, default='l1', help='l1 | l2 | ffl | none')
+parser.add_argument('--weight_type', type=str, default='recon', help='recon | recon_real | ffl | none')
 
 opt = parser.parse_args()
 opt.is_train = True

@@ -39,7 +39,7 @@ class VanillaAE(nn.Module):
         # define focal frequency loss
         if self.method == 'psd':
             self.norm = opt.norm
-            self.weight = opt.weight
+            self.weight_type = opt.weight_type
             self.criterion_freq = PSDLoss(loss_weight=opt.ffl_w,
                                           alpha=opt.alpha,
                                           patch_factor=opt.patch_factor,
@@ -76,7 +76,7 @@ class VanillaAE(nn.Module):
         # apply focal frequency loss
         if epoch >= self.opt.freq_start_epoch:
             if self.method == 'psd':
-                errG_freq = self.criterion_freq(recon, real, self.norm, self.weight, matrix)
+                errG_freq = self.criterion_freq(recon, real, self.norm, self.weight_type, matrix)
             else:
                 errG_freq = self.criterion_freq(recon, real, matrix)
         else:

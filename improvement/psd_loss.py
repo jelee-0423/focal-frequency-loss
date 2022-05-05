@@ -37,7 +37,7 @@ class PSDLoss(nn.Module):
     def tensor2freq(self, img):
         # CxNxHxW, torch.fft.fft2默认只处理后两维，分别对每个样本的每个通道的HxW做fft，互不干扰
         # freq = torch.fft.fft2(y, norm='ortho')  # ffl中做了'1/sqrt(H*W)'的归一化，但是考虑到psd中要计算振幅，所以这里和AI中保持一致
-        freq = torch.fft.fft2(img)  # torch版本要高于1.7.1，因为在低于等于1.7.1的版本中没找到fftshift函数，而这个变换是AI所需要的
+        freq = torch.fft.fft2(img, norm='ortho')  # torch版本要高于1.7.1，因为在低于等于1.7.1的版本中没找到fftshift函数，而这个变换是AI所需要的
         freq = torch.fft.fftshift(freq, (2, 3))  # 只变换后两维
         freq = torch.stack([freq.real, freq.imag], -1)  # 和ffl统一，方便理解
         return freq
@@ -88,9 +88,10 @@ class PSDLoss(nn.Module):
 
         return mask_all
 
-    def loss_formulation(self, recon_freq, real_freq, norm='l2', weight='recon', matrix=None):
+    def loss_formulation(self, recon_freq, real_freq, norm='l2', weight_type='recon', matrix=None):
         # frequency distance using (squared) Euclidean distance
         tmp = recon_freq ** 2 - real_freq ** 2  # |Fr|**2 - |Ff|**2, 得到实数？
+
         # 1. tmp是一个(a, b)形式的复数a+bi
         # if norm == 'l1':
         #     tmp = tmp ** 2  # (a**2, b**2)
@@ -103,18 +104,37 @@ class PSDLoss(nn.Module):
         tmp = tmp[..., 0] + tmp[..., 1]  # equal to torch.sum(recon_freq**2, 4) - torch.sum(real_freq**2, 4)
         if norm == 'l1':
             freq_distance = torch.abs(tmp)
-        else:
+        elif norm == 'l2':
             freq_distance = tmp**2
+        elif norm == 'ffl':
+            tmp = (recon_freq - real_freq) ** 2
+            freq_distance = tmp[..., 0] + tmp[..., 1]
+        elif norm == 'none':
+            freq_distance = recon_freq * 0
+        else:
+            print('norm error!')
+            return
 
         # spectrum weight matrix
         if matrix is not None:
             # if the matrix is predefined
             weight_matrix = matrix.detach()
+        elif weight_type == 'ffl':
+            matrix_tmp = (recon_freq - real_freq) ** 2
+            matrix_tmp = torch.sqrt(matrix_tmp[..., 0] + matrix_tmp[..., 1]) ** self.alpha
+
+            matrix_tmp = matrix_tmp / matrix_tmp.max(-1).values.max(-1).values[:, :, None, None]  # 每个样本每个通道分别归一化
+
+            matrix_tmp[torch.isnan(matrix_tmp)] = 0.0
+            matrix_tmp = torch.clamp(matrix_tmp, min=0.0, max=1.0)
+            weight_matrix = matrix_tmp.clone().detach()
+        elif weight_type == 'none':
+            weight_matrix = torch.ones(freq_distance.shape)
         else:
             # if the matrix is calculated online: continuous, dynamic, detached
             recon_mask_all = self.get_mask(recon_freq)
 
-            if weight == 'recon_real':
+            if weight_type == 'recon_real':
                 real_mask_all = self.get_mask(real_freq)
                 weight_matrix = torch.abs(torch.from_numpy(real_mask_all - recon_mask_all))
             else:  # weight == 'recon'
@@ -128,10 +148,10 @@ class PSDLoss(nn.Module):
                 'but got Min: %.10f Max: %.10f' % (weight_matrix.min().item(), weight_matrix.max().item()))
 
         # dynamic spectrum weighting (Hadamard product)
-        loss = weight_matrix * freq_distance
+        loss = weight_matrix.to(freq_distance.device) * freq_distance
         return torch.mean(loss)
 
-    def forward(self, pred, target, norm='l2', weight='recon', matrix=None, **kwargs):
+    def forward(self, pred, target, norm='l2', weight_type='recon', matrix=None, **kwargs):
         """Forward function to calculate focal frequency loss.
 
         Args:
@@ -149,7 +169,7 @@ class PSDLoss(nn.Module):
             target_freq = torch.mean(target_freq, 0, keepdim=True)
 
         # calculate focal frequency loss
-        return self.loss_formulation(pred_freq, target_freq, norm, weight, matrix) * self.loss_weight
+        return self.loss_formulation(pred_freq, target_freq, norm, weight_type, matrix) * self.loss_weight
 
 
 ###################### Method 1 ######################
